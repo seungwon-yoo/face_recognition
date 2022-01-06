@@ -29,8 +29,10 @@ import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.hardware.camera2.CameraCharacteristics;
 import android.media.ImageReader.OnImageAvailableListener;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.util.Log;
 import android.util.Size;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
@@ -40,6 +42,9 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.Observer;
+
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.mlkit.vision.common.InputImage;
@@ -48,14 +53,22 @@ import com.google.mlkit.vision.face.FaceDetection;
 import com.google.mlkit.vision.face.FaceDetector;
 import com.google.mlkit.vision.face.FaceDetectorOptions;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
+
 import org.tensorflow.lite.examples.detection.customview.OverlayView;
 import org.tensorflow.lite.examples.detection.customview.OverlayView.DrawCallback;
 import org.tensorflow.lite.examples.detection.env.BorderedText;
 import org.tensorflow.lite.examples.detection.env.ImageUtils;
 import org.tensorflow.lite.examples.detection.env.Logger;
+import org.tensorflow.lite.examples.detection.room.PersonalInfo;
+import org.tensorflow.lite.examples.detection.room.PersonalInfoDao;
+import org.tensorflow.lite.examples.detection.room.PersonalInfoDatabase;
 import org.tensorflow.lite.examples.detection.tflite.SimilarityClassifier;
 import org.tensorflow.lite.examples.detection.tflite.TFLiteObjectDetectionAPIModel;
 import org.tensorflow.lite.examples.detection.tracking.MultiBoxTracker;
@@ -67,7 +80,7 @@ import org.tensorflow.lite.examples.detection.tracking.MultiBoxTracker;
 public class DetectorActivity extends CameraActivity implements OnImageAvailableListener {
   private static final Logger LOGGER = new Logger();
 
-
+  PersonalInfoDatabase db;
   // FaceNet
 //  private static final int TF_OD_API_INPUT_SIZE = 160;
 //  private static final boolean TF_OD_API_IS_QUANTIZED = false;
@@ -136,12 +149,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     super.onCreate(savedInstanceState);
 
     fabAdd = findViewById(R.id.fab_add);
-    fabAdd.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View view) {
-        onAddClick();
-      }
-    });
+    fabAdd.setOnClickListener(view -> onAddClick());
 
     // Real-time contour detection of multiple faces
     FaceDetectorOptions options =
@@ -156,6 +164,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
     faceDetector = detector;
 
+    db = PersonalInfoDatabase.getAppDatabase(this);
 
     //checkWritePermission();
 
@@ -199,6 +208,23 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
       toast.show();
       finish();
     }
+
+    db.personalInfoDao().getAll().observe(this, new Observer<List<PersonalInfo>>() {
+      @Override
+      public void onChanged(List<PersonalInfo> personalInfos) {
+        if (personalInfos.size() != 0) {
+          for (int i = 0; i < personalInfos.size(); i++) {
+            detector.register(personalInfos.get(i).getName(), personalInfos.get(i).getRecognition());
+          }
+        }
+      }
+    });
+    // load recognition data
+    /*LiveData<List<PersonalInfo>> h = db.personalInfoDao().getAll();
+    Log.d("livedata Info : ",h.toString());
+    if(h != null) {
+      detector.register("유승원", db.personalInfoDao().getAll().getValue().get(0).getRecognition());
+    }*/
 
     previewWidth = size.getWidth();
     previewHeight = size.getHeight();
@@ -304,18 +330,12 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                   return;
                 }
                 runInBackground(
-                        new Runnable() {
-                          @Override
-                          public void run() {
-                            onFacesDetected(currTimestamp, faces, addPending);
-                            addPending = false;
-                          }
+                        () -> {
+                          onFacesDetected(currTimestamp, faces, addPending);
+                          addPending = false;
                         });
               }
-
             });
-
-
   }
 
   @Override
@@ -403,7 +423,23 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
           if (name.isEmpty()) {
               return;
           }
-          detector.register(name, rec);
+          // add to db
+          new InsertAsyncTask(db.personalInfoDao()).execute(new PersonalInfo(name, rec));
+
+          // save image to inner memory
+          /*File tempFile = new File(getCacheDir(), "seungwon");
+          try{
+            Bitmap bitmapImage = rec.getCrop();
+            tempFile.createNewFile();
+            FileOutputStream out = new FileOutputStream(tempFile);
+            bitmapImage.compress(Bitmap.CompressFormat.PNG, 100, out);
+            out.close();
+            Toast.makeText(getApplicationContext(),"파일 저장 성공 !",Toast.LENGTH_SHORT).show();
+          } catch (IOException e) {
+            Toast.makeText(getApplicationContext(),"파일 저장 실패...",Toast.LENGTH_SHORT).show();
+          }*/
+
+        detector.register(name, rec);
           //knownFaces.put(name, rec);
           dlg.dismiss();
       }
@@ -427,19 +463,14 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
        if (rec.getExtra() != null) {
          showAddFaceDialog(rec);
        }
-
     }
 
     runOnUiThread(
-            new Runnable() {
-              @Override
-              public void run() {
-                showFrameInfo(previewWidth + "x" + previewHeight);
-                showCropInfo(croppedBitmap.getWidth() + "x" + croppedBitmap.getHeight());
-                showInference(lastProcessingTimeMs + "ms");
-              }
+            () -> {
+              showFrameInfo(previewWidth + "x" + previewHeight);
+              showCropInfo(croppedBitmap.getWidth() + "x" + croppedBitmap.getHeight());
+              showInference(lastProcessingTimeMs + "ms");
             });
-
   }
 
   private void onFacesDetected(long currTimestamp, List<Face> faces, boolean add) {
@@ -571,7 +602,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
           }
           //flip.postScale(1, -1, targetW / 2.0f, targetH / 2.0f);
           flip.mapRect(boundingBox);
-
         }
 
         final SimilarityClassifier.Recognition result = new SimilarityClassifier.Recognition(
@@ -582,20 +612,22 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         result.setExtra(extra);
         result.setCrop(crop);
         mappedRecognitions.add(result);
-
       }
-
-
     }
-
-    //    if (saved) {
-//      lastSaved = System.currentTimeMillis();
-//    }
-
     updateResults(currTimestamp, mappedRecognitions);
-
-
   }
 
+  public static class InsertAsyncTask extends AsyncTask<PersonalInfo, Void, Void>{
+    private final PersonalInfoDao personalInfoDao;
 
+    public InsertAsyncTask(PersonalInfoDao personalInfoDao){
+      this.personalInfoDao = personalInfoDao;
+    }
+
+    @Override
+    protected Void doInBackground(PersonalInfo... personalInfos) {
+      personalInfoDao.insert(personalInfos[0]);
+      return null;
+    }
+  }
 }

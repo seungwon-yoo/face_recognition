@@ -175,6 +175,17 @@ public class TFLiteObjectDetectionAPIModel
     Pair<String, Float> ret = null;
     for (Map.Entry<String, Recognition> entry : registered.entrySet()) {
         final String name = entry.getKey();
+        //////////////////
+        /*float[][] extra = new float[1][192];
+
+        Object obj = entry.getValue().getExtra();
+        obj.
+        for(int k = 0; k < 192; k++){
+          extra[0][k] = array.get(k);
+        }
+
+        final float[] knownEmb = extra[0];*/
+        ///////////////////
         final float[] knownEmb = ((float[][]) entry.getValue().getExtra())[0];
 
         float distance = 0;
@@ -189,9 +200,7 @@ public class TFLiteObjectDetectionAPIModel
     }
 
     return ret;
-
   }
-
 
   @Override
   public List<Recognition> recognizeImage(final Bitmap bitmap, boolean storeExtra) {

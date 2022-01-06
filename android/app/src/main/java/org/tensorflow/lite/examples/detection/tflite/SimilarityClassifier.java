@@ -17,6 +17,10 @@ package org.tensorflow.lite.examples.detection.tflite;
 
 import android.graphics.Bitmap;
 import android.graphics.RectF;
+
+import androidx.room.ColumnInfo;
+import androidx.room.Embedded;
+
 import java.util.List;
 
 /** Generic interface for interacting with different recognition engines. */
@@ -54,6 +58,7 @@ public interface SimilarityClassifier {
     private Object extra;
 
     /** Optional location within the source image for the location of the recognized object. */
+    @Embedded
     private RectF location;
     private Integer color;
     private Bitmap crop;

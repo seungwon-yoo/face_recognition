@@ -522,35 +522,24 @@ public abstract class CameraActivity extends AppCompatActivity
         this.cameraId = chooseCamera();
 
         Fragment fragment;
-        if (useCamera2API) {
-            CameraConnectionFragment camera2Fragment =
-                    CameraConnectionFragment.newInstance(
-                            new CameraConnectionFragment.ConnectionCallback() {
-                                @Override
-                                public void onPreviewSizeChosen(final Size size, final int rotation) {
-                                    previewHeight = size.getHeight();
-                                    previewWidth = size.getWidth();
-                                    CameraActivity.this.onPreviewSizeChosen(size, rotation);
-                                }
-                            },
-                            this,
-                            getLayoutId(),
-                            getDesiredPreviewFrameSize());
+        CameraConnectionFragment camera2Fragment =
+                CameraConnectionFragment.newInstance(
+                        new CameraConnectionFragment.ConnectionCallback() {
+                            @Override
+                            public void onPreviewSizeChosen(final Size size, final int rotation) {
+                                previewHeight = size.getHeight();
+                                previewWidth = size.getWidth();
+                                CameraActivity.this.onPreviewSizeChosen(size, rotation);
+                            }
+                        },
+                        this,
+                        getLayoutId(),
+                        getDesiredPreviewFrameSize());
 
-            camera2Fragment.setCamera(cameraId);
-            fragment = camera2Fragment;
+        camera2Fragment.setCamera(cameraId);
+        fragment = camera2Fragment;
 
-        } else {
 
-          int facing = (useFacing == CameraCharacteristics.LENS_FACING_BACK) ?
-                          Camera.CameraInfo.CAMERA_FACING_BACK :
-                          Camera.CameraInfo.CAMERA_FACING_FRONT;
-            LegacyCameraConnectionFragment frag = new LegacyCameraConnectionFragment(this,
-                    getLayoutId(),
-                    getDesiredPreviewFrameSize(), facing);
-            fragment = frag;
-
-        }
 
         getFragmentManager().beginTransaction().replace(R.id.container, fragment).commit();
     }
